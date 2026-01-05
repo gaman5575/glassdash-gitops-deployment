@@ -4,7 +4,7 @@ metadata:
   name: glassdash
   namespace: glassdash
 spec:
-  replicas: 1  # Set to 2 for full rolling updates + availability
+  replicas: 1
   selector:
     matchLabels:
       app: glassdash
@@ -16,6 +16,8 @@ spec:
       volumes:
       - name: html-volume
         emptyDir: {}
+      - name: repo-storage
+        emptyDir: {}
       containers:
       - name: nginx
         image: nginx:alpine
@@ -25,32 +27,39 @@ spec:
         - name: html-volume
           mountPath: /usr/share/nginx/html
       - name: git-sync-sidecar
-        image: alpine:latest  # Full alpine for apk install
+        image: alpine/git:latest
         command: ["/bin/sh", "-c"]
         args:
         - |
-          # Install git and rsync once
-          apk add --no-cache git rsync
-
           REPO_DIR="/repo"
           HTML_DIR="/html"
           INTERVAL=30
 
-          # Initial clone if repo doesn't exist
+          echo "Starting Git sync sidecar..."
+
+          # Initial clone if repo not present
           if [ ! -d "$REPO_DIR/.git" ]; then
+            echo "Cloning repository..."
             git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git "$REPO_DIR"
           fi
 
-          # Initial sync
-          rsync -a --delete "$REPO_DIR/public/" "$HTML_DIR/"
-          echo "Initial sync complete at $(date)" > "$HTML_DIR/sync-log.txt"
+          # Function to sync files
+          sync_files() {
+            echo "Syncing files at $(date)..."
+            rm -rf "$HTML_DIR"/*
+            cp -r "$REPO_DIR/public"/* "$HTML_DIR"/ || echo "Copy failed - check paths"
+            echo "Sync complete" >> "$HTML_DIR/sync-log.txt"
+          }
 
-          # Continuous sync loop
+          # Initial sync
+          sync_files
+
+          # Continuous loop
           while true; do
             cd "$REPO_DIR"
-            git pull origin main --depth=1
-            rsync -a --delete "$REPO_DIR/public/" "$HTML_DIR/"
-            echo "Sync complete at $(date)" >> "$HTML_DIR/sync-log.txt"
+            echo "Pulling latest changes..."
+            git pull origin main --depth=1 || echo "Git pull failed"
+            sync_files
             sleep $INTERVAL
           done
         volumeMounts:
@@ -58,8 +67,3 @@ spec:
           mountPath: /html
         - name: repo-storage
           mountPath: /repo
-      volumes:
-      - name: html-volume
-        emptyDir: {}
-      - name: repo-storage
-        emptyDir: {}
