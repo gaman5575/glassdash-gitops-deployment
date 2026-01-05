@@ -25,3 +25,4 @@ spec:
       - name: html
         configMap:
           name: glassdash-static-files
+
