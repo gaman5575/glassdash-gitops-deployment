@@ -4,7 +4,7 @@ metadata:
   name: glassdash
   namespace: glassdash
 spec:
-  replicas: 1  # Increase to 2+ for full rolling updates on manifest changes
+  replicas: 1 # Set to 2 for extra resilience/rolling updates
   selector:
     matchLabels:
       app: glassdash
@@ -24,18 +24,19 @@ spec:
         volumeMounts:
         - name: git-volume
           mountPath: /usr/share/nginx/html
-          subPath: repo/public  # Serves contents of public/ at root URL
+          subPath: public # Directly serves your public/ folder contents at root URL
       - name: git-sync
-        image: registry.k8s.io/git-sync/v4.0.0  # Official, reliable image
+        image: registry.k8s.io/git-sync/git-sync:v4.5.1 # Correct official image + latest tag
         args:
         - --repo=https://github.com/gaman5575/glassdash-gitops-deployment.git
         - --branch=main
         - --depth=1
-        - --wait=30  # Sync every 30 seconds
+        - --wait=30 # Pull every 30 seconds
         - --root=/git
-        - --dest=repo  # Creates /git/repo symlink to current commit
+        - --dest=public # Syncs repo's public/ to /git/public
+        - --sync-hook-command=/bin/sh -c "echo 'Synced at $(date)' > /git/public/sync.txt" # Optional: visible sync log file
         volumeMounts:
         - name: git-volume
           mountPath: /git
         securityContext:
-          runAsUser: 65533  # Non-root (recommended)
+          runAsUser: 65533 # Non-root user (best practice)
