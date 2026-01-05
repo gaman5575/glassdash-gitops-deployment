@@ -4,7 +4,7 @@ metadata:
   name: glassdash
   namespace: glassdash
 spec:
-  replicas: 1 # Set to 2 for extra resilience/rolling updates
+  replicas: 1 # Set to 2 for full rolling updates + higher availability
   selector:
     matchLabels:
       app: glassdash
@@ -24,19 +24,20 @@ spec:
         volumeMounts:
         - name: git-volume
           mountPath: /usr/share/nginx/html
-          subPath: public # Directly serves your public/ folder contents at root URL
+          subPath: synced-repo/public # Serves your public/ files directly at root URL
       - name: git-sync
-        image: registry.k8s.io/git-sync/git-sync:v4.5.1 # Correct official image + latest tag
+        image: registry.k8s.io/git-sync/git-sync:v4.0.0 # Proven stable tag (avoids pull errors)
         args:
         - --repo=https://github.com/gaman5575/glassdash-gitops-deployment.git
         - --branch=main
         - --depth=1
-        - --wait=30 # Pull every 30 seconds
+        - --wait=30 # Sync every 30 seconds
         - --root=/git
-        - --dest=public # Syncs repo's public/ to /git/public
-        - --sync-hook-command=/bin/sh -c "echo 'Synced at $(date)' > /git/public/sync.txt" # Optional: visible sync log file
+        - --dest=synced-repo # Syncs full repo to /git/synced-repo (includes public/)
+        - --verbose # Logs details for debugging
+        - --sync-hook-command=/bin/sh -c "echo 'Sync complete at $(date)' > /git/synced-repo/public/sync-log.txt" # Creates visible log file
         volumeMounts:
         - name: git-volume
           mountPath: /git
         securityContext:
-          runAsUser: 65533 # Non-root user (best practice)
+          runAsUser: 65533
