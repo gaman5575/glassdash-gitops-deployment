@@ -4,7 +4,7 @@ metadata:
   name: glassdash
   namespace: glassdash
 spec:
-  replicas: 1
+  replicas: 1  # Increase to 2 for rolling updates on manifest changes
   selector:
     matchLabels:
       app: glassdash
@@ -14,31 +14,58 @@ spec:
         app: glassdash
     spec:
       volumes:
-      - name: git-volume
+      - name: html-volume
         emptyDir: {}
+      initContainers:
+      - name: initial-clone
+        image: alpine/git:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git /repo &&
+          rsync -a /repo/public/ /html/ &&
+          echo "Initial clone complete at $(date)" > /html/sync-log.txt
+        volumeMounts:
+        - name: html-volume
+          mountPath: /html
       containers:
       - name: nginx
         image: nginx:alpine
         ports:
         - containerPort: 80
         volumeMounts:
-        - name: git-volume
+        - name: html-volume
           mountPath: /usr/share/nginx/html
-          subPath: current/public # Serves your public/ folder contents at root URL
-      - name: git-sync
-        image: registry.k8s.io/git-sync/git-sync:v4.5.1 # Latest stable v4 tag (fixes flag issues)
+      - name: git-sync-sidecar
+        image: alpine/git:latest
+        command: ["/bin/sh", "-c"]
         args:
-        - --repo=https://github.com/gaman5575/glassdash-gitops-deployment.git
-        - --ref=main # Branch (replaces --branch)
-        - --depth=1
-        - --period=30s # Sync every 30 seconds (replaces --wait)
-        - --root=/git
-        - --link=current # Symlink /git/current → current commit dir
-        - --verbose # Detailed logs for debugging
-        # Optional hook: creates sync-log.txt in public/ for verification
-        - --exechook-command=/bin/sh -c "echo 'Sync complete at $(date)' > /git/current/public/sync-log.txt"
+        - |
+          REPO_DIR="/repo"
+          HTML_DIR="/html"
+          INTERVAL=30
+
+          # Initial setup if needed
+          if [ ! -d "$REPO_DIR" ]; then
+            git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git "$REPO_DIR"
+            rsync -a --delete "$REPO_DIR/public/" "$HTML_DIR/"
+          fi
+
+          # Continuous loop
+          while true; do
+            cd "$REPO_DIR"
+            git pull origin main --depth=1
+            rsync -a --delete "$REPO_DIR/public/" "$HTML_DIR/"
+            echo "Sync complete at $(date)" >> "$HTML_DIR/sync-log.txt"
+            sleep $INTERVAL
+          done
         volumeMounts:
-        - name: git-volume
-          mountPath: /git
-        securityContext:
-          runAsUser: 65533
+        - name: html-volume
+          mountPath: /html
+        - name: repo-storage  # Separate volume for repo to avoid conflicts
+          mountPath: /repo
+      volumes:
+      - name: html-volume
+        emptyDir: {}
+      - name: repo-storage
+        emptyDir: {}
