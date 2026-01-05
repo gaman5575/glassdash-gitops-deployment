@@ -4,7 +4,7 @@ metadata:
   name: glassdash
   namespace: glassdash
 spec:
-  replicas: 1  # Increase to 2 for rolling updates on manifest changes
+  replicas: 1  # Set to 2 for full rolling updates + availability
   selector:
     matchLabels:
       app: glassdash
@@ -16,18 +16,6 @@ spec:
       volumes:
       - name: html-volume
         emptyDir: {}
-      initContainers:
-      - name: initial-clone
-        image: alpine/git:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git /repo &&
-          rsync -a /repo/public/ /html/ &&
-          echo "Initial clone complete at $(date)" > /html/sync-log.txt
-        volumeMounts:
-        - name: html-volume
-          mountPath: /html
       containers:
       - name: nginx
         image: nginx:alpine
@@ -37,21 +25,27 @@ spec:
         - name: html-volume
           mountPath: /usr/share/nginx/html
       - name: git-sync-sidecar
-        image: alpine/git:latest
+        image: alpine:latest  # Full alpine for apk install
         command: ["/bin/sh", "-c"]
         args:
         - |
+          # Install git and rsync once
+          apk add --no-cache git rsync
+
           REPO_DIR="/repo"
           HTML_DIR="/html"
           INTERVAL=30
 
-          # Initial setup if needed
-          if [ ! -d "$REPO_DIR" ]; then
+          # Initial clone if repo doesn't exist
+          if [ ! -d "$REPO_DIR/.git" ]; then
             git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git "$REPO_DIR"
-            rsync -a --delete "$REPO_DIR/public/" "$HTML_DIR/"
           fi
 
-          # Continuous loop
+          # Initial sync
+          rsync -a --delete "$REPO_DIR/public/" "$HTML_DIR/"
+          echo "Initial sync complete at $(date)" > "$HTML_DIR/sync-log.txt"
+
+          # Continuous sync loop
           while true; do
             cd "$REPO_DIR"
             git pull origin main --depth=1
@@ -62,7 +56,7 @@ spec:
         volumeMounts:
         - name: html-volume
           mountPath: /html
-        - name: repo-storage  # Separate volume for repo to avoid conflicts
+        - name: repo-storage
           mountPath: /repo
       volumes:
       - name: html-volume
