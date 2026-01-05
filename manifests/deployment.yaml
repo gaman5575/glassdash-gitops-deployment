@@ -28,7 +28,7 @@ spec:
           mountPath: /usr/share/nginx/html
       - name: git-sync-sidecar
         image: alpine/git:latest
-        command: ["/bin/sh", "-c"]
+        command: [ "/bin/sh", "-c" ]
         args:
         - |
           REPO_DIR="/repo"
@@ -57,8 +57,9 @@ spec:
           # Continuous loop
           while true; do
             cd "$REPO_DIR"
-            echo "Pulling latest changes..."
-            git pull origin main --depth=1 || echo "Git pull failed"
+            echo "Syncing with remote..."
+            git fetch origin main --depth=1 || echo "Fetch failed"
+            git reset --hard origin/main || echo "Reset failed"
             sync_files
             sleep $INTERVAL
           done
