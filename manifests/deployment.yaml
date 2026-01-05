@@ -4,7 +4,7 @@ metadata:
   name: glassdash
   namespace: glassdash
 spec:
-  replicas: 1
+  replicas: 1  # Change to 2 later for extra rolling updates on manifest changes
   selector:
     matchLabels:
       app: glassdash
@@ -13,18 +13,53 @@ spec:
       labels:
         app: glassdash
     spec:
+      volumes:
+      - name: html-volume
+        emptyDir: {}
+      initContainers:
+      - name: initial-clone
+        image: alpine/git:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git /repo &&
+          cp -r /repo/public/* /html/
+        volumeMounts:
+        - name: html-volume
+          mountPath: /html
       containers:
       - name: nginx
         image: nginx:alpine
         ports:
         - containerPort: 80
         volumeMounts:
-        - name: html
+        - name: html-volume
           mountPath: /usr/share/nginx/html
+      - name: git-sync-sidecar
+        image: alpine/git:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          REPO="/repo"
+          HTML="/html"
+          INTERVAL=30
+
+          while true; do
+            if [ -d "$REPO" ]; then
+              cd "$REPO" && git pull origin main
+            else
+              git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git "$REPO"
+            fi
+            rsync -a --delete "$REPO/public/" "$HTML/"
+            sleep $INTERVAL
+          done
+        volumeMounts:
+        - name: html-volume
+          mountPath: /html
+        - name: repo-temp  # Optional separate volume for repo to avoid conflicts
+          mountPath: /repo
       volumes:
-      - name: html
-        configMap:
-          name: glassdash-static-files
-
-
-
+      - name: html-volume
+        emptyDir: {}
+      - name: repo-temp
+        emptyDir: {}
