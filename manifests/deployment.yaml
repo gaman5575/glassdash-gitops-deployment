@@ -4,7 +4,7 @@ metadata:
   name: glassdash
   namespace: glassdash
 spec:
-  replicas: 1  # Change to 2 later for extra rolling updates on manifest changes
+  replicas: 1  # Increase to 2+ for full rolling updates on manifest changes
   selector:
     matchLabels:
       app: glassdash
@@ -14,52 +14,28 @@ spec:
         app: glassdash
     spec:
       volumes:
-      - name: html-volume
+      - name: git-volume
         emptyDir: {}
-      initContainers:
-      - name: initial-clone
-        image: alpine/git:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git /repo &&
-          cp -r /repo/public/* /html/
-        volumeMounts:
-        - name: html-volume
-          mountPath: /html
       containers:
       - name: nginx
         image: nginx:alpine
         ports:
         - containerPort: 80
         volumeMounts:
-        - name: html-volume
+        - name: git-volume
           mountPath: /usr/share/nginx/html
-      - name: git-sync-sidecar
-        image: alpine/git:latest
-        command: ["/bin/sh", "-c"]
+          subPath: repo/public  # Serves contents of public/ at root URL
+      - name: git-sync
+        image: registry.k8s.io/git-sync/v4.0.0  # Official, reliable image
         args:
-        - |
-          REPO="/repo"
-          HTML="/html"
-          INTERVAL=30
-
-          while true; do
-            if [ -d "$REPO" ]; then
-              cd "$REPO" && git pull origin main
-            else
-              git clone --depth 1 https://github.com/gaman5575/glassdash-gitops-deployment.git "$REPO"
-            fi
-            rsync -a --delete "$REPO/public/" "$HTML/"
-            sleep $INTERVAL
-          done
+        - --repo=https://github.com/gaman5575/glassdash-gitops-deployment.git
+        - --branch=main
+        - --depth=1
+        - --wait=30  # Sync every 30 seconds
+        - --root=/git
+        - --dest=repo  # Creates /git/repo symlink to current commit
         volumeMounts:
-        - name: html-volume
-          mountPath: /html
-        - name: repo-temp  # Optional separate volume for repo to avoid conflicts
-          mountPath: /repo
-      volumes:
-      - name: html-volume
-        emptyDir: {}
-      - name: repo-temp
-        emptyDir: {}
+        - name: git-volume
+          mountPath: /git
+        securityContext:
+          runAsUser: 65533  # Non-root (recommended)
