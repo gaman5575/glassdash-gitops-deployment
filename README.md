@@ -45,6 +45,15 @@ Push changes to `public/` folder → sidecar auto-syncs → refresh browser → 
 
 ## Architecture
 
+# GlassDash – GitOps Static Delivery with Sidecar Sync
+
+This project demonstrates a **GitOps-based static site delivery architecture** using a `git-sync` sidecar and Nginx, managed by ArgoCD.  
+It enables **zero-downtime updates** without rebuilding container images.
+
+---
+
+## 📐 Architecture Overview
+
 ```mermaid
 graph TD
     A[GitHub Repo public code and manifests] --> B[git sync sidecar git pull every 30s]
@@ -52,6 +61,7 @@ graph TD
     C --> D[Nginx Container serves live files]
     E[Browser] --> D
     F[ArgoCD] --> G[Deployment Pod Service Namespace]
+```
 
 ### Setup Instructions (Local Minikube)
 
